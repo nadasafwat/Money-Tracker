@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Money Tracker</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#4f46e5">
+  </head>
+  <body class="bg-indigo-600">
+    <div id="root">
+      <div style="height: 100vh; display: flex; align-items: center; justify-content: center; color: white; font-family: sans-serif;">
+        <div style="text-align: center;">
+          <h2 style="margin-bottom: 10px;">Money Tracker</h2>
+          <p>Loading application...</p>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/service-worker.js');
+        });
+      }
+    </script>
+  </body>
+</html>
+

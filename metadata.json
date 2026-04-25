@@ -1,0 +1,5 @@
+{
+  "name": "Money Tracker",
+  "description": "A comprehensive offline-first PWA for tracking personal income and expenses with smart categories and analytics.",
+  "requestFramePermissions": []
+}
