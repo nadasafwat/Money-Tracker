@@ -376,7 +376,7 @@ export default function App() {
     transactions.forEach(t => {
       csv += `${t.date},${t.type},"${t.category}",${t.paymentMethod},${t.amount},"${t.description.replace(/"/g, '""')}"\n`;
     });
-    const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([BOM + csv], { type: 'text/csv;charset=UTF-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
@@ -412,7 +412,7 @@ export default function App() {
     reader.onerror = () => {
       showNotification("Error reading file.", "error");
     };
-    reader.readAsText(file);
+    reader.readAsText(file, 'UTF-8');
   };
 
   const handleBulkImport = () => {
