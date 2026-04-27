@@ -370,13 +370,19 @@ export default function App() {
   };
 
   const exportCSV = () => {
-    // Add UTF-8 BOM for Excel to recognize Arabic characters correctly
-    const BOM = "\uFEFF";
     let csv = "Date,Type,Category,Payment Method,Amount,Description\n";
     transactions.forEach(t => {
       csv += `${t.date},${t.type},"${t.category}",${t.paymentMethod},${t.amount},"${t.description.replace(/"/g, '""')}"\n`;
     });
-    const blob = new Blob([BOM + csv], { type: 'text/csv;charset=UTF-8;' });
+
+    // Explicitly encode as UTF-8 bytes so Arabic characters are preserved correctly.
+    // The BOM is prepended as raw bytes (0xEF 0xBB 0xBF) — not as a string — to
+    // guarantee Excel opens the file in UTF-8 mode regardless of the browser.
+    const encoder = new TextEncoder(); // always outputs UTF-8
+    const utf8Bytes = encoder.encode(csv);
+    const bomBytes = new Uint8Array([0xEF, 0xBB, 0xBF]);
+    const blob = new Blob([bomBytes, utf8Bytes], { type: 'text/csv;charset=UTF-8;' });
+
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
@@ -384,6 +390,7 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const importCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
