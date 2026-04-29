@@ -317,11 +317,33 @@ export default function App() {
     const lines = text.split(/\r?\n/).filter(l => l.trim());
     if (lines.length <= 1) return [];
 
-    const header = lines[0].toLowerCase();
-    const separator = header.includes(';') ? ';' : ',';
-    
-    const dataLines = lines.slice(1);
-    const newTxs: Transaction[] = [];
+    const separator = lines[0].includes(';') ? ';' : ',';
+
+    // Parse a single CSV line respecting quoted fields
+    const parseLine = (line: string): string[] => {
+      const regex = new RegExp(`${separator}(?=(?:(?:[^"]*"){2})*[^"]*$)`);
+      return line.split(regex).map(p => p.replace(/^"|"$/g, '').trim());
+    };
+
+    // Build a column-index map from the header row (case-insensitive, flexible names)
+    const headerParts = parseLine(lines[0]).map(h => h.toLowerCase().replace(/\s+/g, ''));
+    const col = (names: string[]): number => {
+      for (const name of names) {
+        const idx = headerParts.indexOf(name.toLowerCase().replace(/\s+/g, ''));
+        if (idx !== -1) return idx;
+      }
+      return -1;
+    };
+
+    const dateIdx   = col(['date']);
+    const typeIdx   = col(['type']);
+    const amtIdx    = col(['amount', 'amt']);
+    const catIdx    = col(['category', 'cat']);
+    const pmIdx     = col(['paymentmethod', 'payment method', 'payment', 'method']);
+    const descIdx   = col(['description', 'desc', 'note', 'notes']);
+
+    // All required columns must be found
+    if ([dateIdx, typeIdx, amtIdx, catIdx].some(i => i === -1)) return [];
 
     const allCategories = [...CATEGORIES.expense, ...CATEGORIES.income];
     const findCategory = (cat: string) => {
@@ -334,7 +356,7 @@ export default function App() {
       if (!dateStr) return new Date().toISOString().substring(0, 10);
       const parts = dateStr.split(/[-/.]/);
       if (parts.length === 3) {
-        let [p1, p2, p3] = parts;
+        const [p1, p2, p3] = parts;
         if (p1.length === 4) return `${p1}-${p2.padStart(2, '0')}-${p3.padStart(2, '0')}`;
         // Assume M/D/YYYY
         return `${p3}-${p1.padStart(2, '0')}-${p2.padStart(2, '0')}`;
@@ -342,19 +364,23 @@ export default function App() {
       return dateStr;
     };
 
-    for (const line of dataLines) {
-      const regex = new RegExp(`${separator}(?=(?:(?:[^"]*"){2})*[^"]*$)`);
-      const parts = line.split(regex);
-      
-      if (parts.length < 5) continue;
+    const newTxs: Transaction[] = [];
+    for (const line of lines.slice(1)) {
+      const parts = parseLine(line);
+      if (parts.length < 4) continue;
 
-      const [dateRaw, typeRaw, categoryRaw, paymentMethodRaw, amountStr, descriptionRaw] = parts.map(p => p.replace(/^"|"$/g, '').trim());
-      
+      const dateRaw        = parts[dateIdx] || '';
+      const typeRaw        = parts[typeIdx]  || '';
+      const categoryRaw    = catIdx  !== -1 ? parts[catIdx]  || '' : '';
+      const paymentRaw     = pmIdx   !== -1 ? parts[pmIdx]   || '' : '';
+      const amountStr      = parts[amtIdx]  || '';
+      const descriptionRaw = descIdx !== -1 ? parts[descIdx] || '' : '';
+
       const amount = parseFloat(amountStr.replace(/[^0-9.-]/g, ''));
       if (isNaN(amount)) continue;
 
       const type = typeRaw.toLowerCase();
-      const paymentMethod = paymentMethodRaw.toLowerCase();
+      const paymentMethod = paymentRaw.toLowerCase();
 
       newTxs.push({
         id: Math.random().toString(36).substr(2, 9),
@@ -363,7 +389,7 @@ export default function App() {
         category: findCategory(categoryRaw),
         paymentMethod: (paymentMethod === 'cash' || paymentMethod === 'card') ? paymentMethod : 'cash',
         amount: amount,
-        description: descriptionRaw?.replace(/""/g, '"') || ''
+        description: descriptionRaw.replace(/""/g, '"'),
       });
     }
     return newTxs;
@@ -631,124 +657,150 @@ export default function App() {
             </div>
           </div>
           
-          {availableCategories.length > 0 && (
-            <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-50">
-              <p className="text-xs text-gray-400 w-full mb-1">Filter by Category:</p>
-              {availableCategories.map(cat => (
-                <button
-                  key={cat}
-                  onClick={() => toggleCategoryFilter(cat)}
-                  className={cn(
-                    "px-3 py-1 rounded-lg text-xs font-medium transition border",
-                    categoryFilters.includes(cat)
-                      ? "bg-indigo-50 border-indigo-200 text-indigo-600"
-                      : "bg-white border-gray-200 text-gray-500 hover:border-gray-300"
-                  )}
-                >
-                  {cat}
-                </button>
-              ))}
-              {categoryFilters.length > 0 && (
-                <button 
-                  onClick={() => setCategoryFilters([])}
-                  className="text-xs text-rose-500 font-medium hover:underline ml-2"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-          )}
+
         </section>
 
-        {/* Transactions List */}
-        <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="p-6 border-b border-gray-50 flex items-center justify-between">
-            <h3 className="text-lg font-bold text-gray-900">Recent Transactions</h3>
-            <button 
-              onClick={exportCSV}
-              className="text-indigo-600 text-sm font-semibold flex items-center gap-1 hover:underline"
-            >
-              <Download className="w-4 h-4" />
-              Export CSV
-            </button>
-          </div>
-          <div className="divide-y divide-gray-50">
-            {filteredTransactions.length > 0 ? (
-              filteredTransactions
-                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                .map((t) => (
-                  <motion.div 
-                    key={t.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="p-4 hover:bg-gray-50 transition flex items-center justify-between group"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className={cn(
-                        "w-10 h-10 rounded-full flex items-center justify-center",
-                        t.type === 'income' ? "bg-emerald-100 text-emerald-600" : "bg-rose-100 text-rose-600"
-                      )}>
-                        {t.type === 'income' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
-                      </div>
-                      <div>
-                        <p className="font-bold text-gray-900">{t.category}</p>
-                        <p className="text-xs text-gray-400 flex items-center gap-2">
-                          <span>{t.date}</span>
-                          <span className="w-1 h-1 bg-gray-300 rounded-full" />
-                          <span className="capitalize">{t.paymentMethod}</span>
-                          {t.description && (
-                            <>
-                              <span className="w-1 h-1 bg-gray-300 rounded-full" />
-                              <span className="truncate max-w-[150px]">{t.description}</span>
-                            </>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right flex items-center gap-4">
-                      <div>
-                        <p className={cn(
-                          "font-bold text-lg",
-                          t.type === 'income' ? "text-emerald-600" : "text-rose-600"
-                        )}>
-                          {t.type === 'income' ? '+' : '-'}EP {t.amount.toFixed(2)}
-                        </p>
-                      </div>
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                        <button 
-                          onClick={() => { setEditingTx(t); setIsModalOpen(true); }}
-                          className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteTransaction(t.id);
-                          }}
-                          className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))
-            ) : (
-              <div className="p-12 text-center">
-                <div className="bg-gray-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Filter className="text-gray-400 w-8 h-8" />
-                </div>
-                <p className="text-gray-500">No transactions found for this period.</p>
-                <button 
-                  onClick={() => { setEditingTx(null); setIsModalOpen(true); }}
-                  className="mt-4 text-indigo-600 font-semibold hover:underline"
+        {/* Transactions List — grouped by date */}
+        <section>
+          {/* Category filter chips */}
+          {availableCategories.length > 0 && (
+            <div className="mb-3">
+              <p className="text-xs text-gray-500 mb-2">Filter by Category:</p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setCategoryFilters([])}
+                  className={cn(
+                    "px-4 py-1.5 rounded-full text-sm font-medium border transition",
+                    categoryFilters.length === 0
+                      ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                      : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                  )}
                 >
-                  Add your first transaction
+                  All
                 </button>
+                {availableCategories.map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => toggleCategoryFilter(cat)}
+                    className={cn(
+                      "px-4 py-1.5 rounded-full text-sm font-medium border transition",
+                      categoryFilters.includes(cat)
+                        ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                        : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                    )}
+                  >
+                    {cat}
+                  </button>
+                ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {filteredTransactions.length > 0 ? (() => {
+            // Group transactions by date, sorted newest first
+            const sorted = [...filteredTransactions].sort(
+              (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+            );
+            const groups: Record<string, typeof sorted> = {};
+            sorted.forEach(t => {
+              if (!groups[t.date]) groups[t.date] = [];
+              groups[t.date].push(t);
+            });
+            const totalAll = filteredTransactions.reduce(
+              (sum, t) => sum + (t.type === 'expense' ? t.amount : -t.amount), 0
+            );
+
+            return (
+              <div className="space-y-3">
+                {/* Total summary card */}
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex">
+                  <div className="w-1.5 bg-indigo-500 flex-shrink-0 rounded-l-2xl" />
+                  <div className="p-5 flex-1 text-center">
+                    <p className="text-sm font-semibold text-indigo-500">
+                      {categoryFilters.length > 0
+                        ? `Total: ${categoryFilters.join(', ')}`
+                        : 'Total All Categories'}
+                    </p>
+                    <p className="text-2xl font-extrabold text-gray-900 mt-1">
+                      EGP {Math.abs(totalAll).toFixed(0)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Date groups */}
+                {Object.entries(groups).map(([date, txs]) => {
+                  const dayTotal = txs.reduce(
+                    (sum, t) => sum + (t.type === 'expense' ? t.amount : -t.amount), 0
+                  );
+                  return (
+                    <div key={date}>
+                      {/* Date header */}
+                      <div className="flex items-center justify-between bg-gray-100 px-4 py-2.5 rounded-xl mb-1">
+                        <div className="flex items-center gap-2 font-bold text-gray-800 text-sm">
+                          <span>🗓️</span>
+                          <span>{date}</span>
+                        </div>
+                        <span className="text-sm font-bold text-gray-700">
+                          Total: {Math.abs(dayTotal).toFixed(0)} EGP
+                        </span>
+                      </div>
+
+                      {/* Transaction rows */}
+                      <div className="space-y-1">
+                        {txs.map(t => (
+                          <motion.div
+                            key={t.id}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="bg-white rounded-xl px-4 py-3 flex items-center justify-between shadow-sm border border-gray-50"
+                          >
+                            <div>
+                              <p className="font-bold text-gray-900 text-sm">{t.category}</p>
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {t.amount.toFixed(0)} EGP
+                                {' · '}
+                                <span className="capitalize">{t.paymentMethod}</span>
+                                {t.description && (
+                                  <span className="ml-1 text-gray-300">· {t.description}</span>
+                                )}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <button
+                                onClick={() => { setEditingTx(t); setIsModalOpen(true); }}
+                                className="p-1.5 text-orange-400 hover:text-orange-500 hover:bg-orange-50 rounded-lg transition"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); deleteTransaction(t.id); }}
+                                className="p-1.5 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })() : (
+            <div className="bg-white rounded-2xl p-12 text-center shadow-sm border border-gray-100">
+              <div className="bg-gray-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Filter className="text-gray-400 w-8 h-8" />
+              </div>
+              <p className="text-gray-500">No transactions found for this period.</p>
+              <button
+                onClick={() => { setEditingTx(null); setIsModalOpen(true); }}
+                className="mt-4 text-indigo-600 font-semibold hover:underline"
+              >
+                Add your first transaction
+              </button>
+            </div>
+          )}
         </section>
 
         {/* Charts */}
