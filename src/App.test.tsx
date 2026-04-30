@@ -38,6 +38,6 @@ describe('Money Tracker App', () => {
 
     // Verify Dashboard is visible
     expect(await screen.findByText('Total Balance')).toBeInTheDocument();
-    expect(screen.getByText('Recent Transactions')).toBeInTheDocument();
+    expect(screen.getByText('Monthly Income')).toBeInTheDocument();
   });
 });

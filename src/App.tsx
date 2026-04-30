@@ -47,8 +47,7 @@ export default function App() {
   const [settings, setSettings] = useState<UserSettings>({ baseIncome: 0 });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
-  const [bulkText, setBulkText] = useState('');
+
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [notification, setNotification] = useState<{ 
     isOpen: boolean; 
@@ -145,6 +144,8 @@ export default function App() {
     setCurrentUser(null);
     setTransactions([]);
     setSettings({ baseIncome: 0 });
+    setUsername('');
+    setPassword('');
   };
 
   // --- Data Persistence ---
@@ -207,6 +208,7 @@ export default function App() {
       : [...transactions, newTx];
     
     saveTransactions(updated);
+    showNotification(editingTx ? 'Transaction updated!' : 'Transaction saved!', 'success');
     setIsModalOpen(false);
     setEditingTx(null);
   };
@@ -252,9 +254,11 @@ export default function App() {
   };
 
   const summary = useMemo(() => {
-    let income = parseFloat(settings.baseIncome.toString()) || 0;
+    const baseIncome = parseFloat(settings.baseIncome.toString()) || 0;
+    let income = baseIncome;
     let expense = 0;
-    let cash = income; // Assume base income is cash for simplicity or user preference
+    // Base income counts toward cash balance by default
+    let cash = baseIncome;
     let card = 0;
 
     filteredTransactions.forEach(t => {
@@ -268,7 +272,7 @@ export default function App() {
       }
     });
 
-    return { totalIncome: income, totalExpense: expense, balance: cash + card, cash, card };
+    return { totalIncome: income, totalExpense: expense, balance: income - expense, cash, card };
   }, [filteredTransactions, settings.baseIncome]);
 
   // --- Charts Data ---
@@ -293,11 +297,14 @@ export default function App() {
 
   const trendData = useMemo(() => {
     const year = selectedMonth.substring(0, 4);
+    const baseIncome = parseFloat(settings.baseIncome.toString()) || 0;
     const months = Array.from({ length: 12 }, (_, i) => {
       const m = (i + 1).toString().padStart(2, '0');
       const monthStr = `${year}-${m}`;
       const monthTxs = transactions.filter(t => t.date.startsWith(monthStr));
-      const inc = monthTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0) + (parseFloat(settings.baseIncome.toString()) || 0);
+      // Only add base income to the currently selected month in the trend view
+      const isSelected = monthStr === selectedMonth;
+      const inc = monthTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0) + (isSelected ? baseIncome : 0);
       const exp = monthTxs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
       return {
         name: new Date(year + '-' + m + '-01').toLocaleString('default', { month: 'short' }),
@@ -396,8 +403,10 @@ export default function App() {
   };
 
   const exportCSV = () => {
+    // Export only the currently filtered month's transactions
+    const toExport = filteredTransactions.length > 0 ? filteredTransactions : transactions;
     let csv = "Date,Type,Category,Payment Method,Amount,Description\n";
-    transactions.forEach(t => {
+    toExport.forEach(t => {
       csv += `${t.date},${t.type},"${t.category}",${t.paymentMethod},${t.amount},"${t.description.replace(/"/g, '""')}"\n`;
     });
 
@@ -448,23 +457,7 @@ export default function App() {
     reader.readAsText(file, 'UTF-8');
   };
 
-  const handleBulkImport = () => {
-    if (!bulkText.trim()) return showNotification("Please paste some CSV data.", "error");
-    
-    try {
-      const newTxs = parseCSVText(bulkText);
-      if (newTxs.length === 0) {
-        showNotification("No valid transactions found in the text.", "error");
-        return;
-      }
-      saveTransactions([...transactions, ...newTxs]);
-      showNotification(`Successfully imported ${newTxs.length} transactions.`, "success");
-      setIsBulkImportOpen(false);
-      setBulkText('');
-    } catch (error) {
-      showNotification("Failed to parse data.", "error");
-    }
-  };
+
 
   if (!isAuthReady) {
     return (
@@ -575,15 +568,15 @@ export default function App() {
           >
             <div className="relative z-10">
               <p className="text-indigo-100 text-sm font-medium">Total Balance</p>
-              <h2 className="text-3xl font-bold mt-1">EP {summary.balance.toFixed(2)}</h2>
+              <h2 className="text-3xl font-bold mt-1">EGP {summary.balance.toFixed(2)}</h2>
               <div className="mt-4 flex justify-between text-sm text-indigo-100 border-t border-indigo-500 pt-3">
                 <div className="flex items-center gap-1">
                   <Wallet className="w-4 h-4 opacity-70" />
-                  <span>Cash: <b>EP {summary.cash.toFixed(2)}</b></span>
+                  <span>Cash: <b>EGP {summary.cash.toFixed(2)}</b></span>
                 </div>
                 <div className="flex items-center gap-1">
                   <CreditCard className="w-4 h-4 opacity-70" />
-                  <span>Card: <b>EP {summary.card.toFixed(2)}</b></span>
+                  <span>Card: <b>EGP {summary.card.toFixed(2)}</b></span>
                 </div>
               </div>
             </div>
@@ -602,7 +595,7 @@ export default function App() {
               </div>
               <p className="text-gray-500 text-sm font-medium">Monthly Income</p>
             </div>
-            <h2 className="text-2xl font-bold text-emerald-600">EP {summary.totalIncome.toFixed(2)}</h2>
+            <h2 className="text-2xl font-bold text-emerald-600">EGP {summary.totalIncome.toFixed(2)}</h2>
             <p className="text-xs text-gray-400 mt-2">Includes base salary + extra</p>
           </motion.div>
 
@@ -616,7 +609,7 @@ export default function App() {
               </div>
               <p className="text-gray-500 text-sm font-medium">Monthly Expenses</p>
             </div>
-            <h2 className="text-2xl font-bold text-rose-600">EP {summary.totalExpense.toFixed(2)}</h2>
+            <h2 className="text-2xl font-bold text-rose-600">EGP {summary.totalExpense.toFixed(2)}</h2>
             <p className="text-xs text-gray-400 mt-2">Total tracked this month</p>
           </motion.div>
         </section>
@@ -897,13 +890,7 @@ export default function App() {
                 <div className="pt-6 border-t border-gray-100">
                   <h4 className="text-sm font-bold text-gray-900 mb-4 uppercase tracking-wider">Data Management</h4>
                   <div className="space-y-3">
-                    <button 
-                      onClick={() => setIsBulkImportOpen(true)}
-                      className="flex items-center gap-3 w-full px-4 py-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition"
-                    >
-                      <Plus className="w-5 h-5 text-indigo-600" />
-                      <span className="text-sm font-medium text-gray-700">Bulk Paste Import</span>
-                    </button>
+
                     <label className="flex items-center gap-3 w-full px-4 py-3 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition">
                       <Upload className="w-5 h-5 text-indigo-600" />
                       <span className="text-sm font-medium text-gray-700">Import CSV</span>
@@ -957,7 +944,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setIsModalOpen(false)}
+              onClick={() => { setIsModalOpen(false); setEditingTx(null); }}
               className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             />
             <motion.div 
@@ -1128,56 +1115,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Bulk Import Modal */}
-      <AnimatePresence>
-        {isBulkImportOpen && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsBulkImportOpen(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden"
-            >
-              <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-                <h3 className="text-xl font-bold text-gray-900">Bulk Paste Import</h3>
-                <button onClick={() => setIsBulkImportOpen(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-                  <X size={20} />
-                </button>
-              </div>
-              <div className="p-6">
-                <p className="text-sm text-gray-500 mb-4">Paste your CSV data below. Make sure it includes the header row.</p>
-                <textarea
-                  value={bulkText}
-                  onChange={(e) => setBulkText(e.target.value)}
-                  className="w-full h-64 p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-sm"
-                  placeholder="Date,Type,Category,Payment Method,Amount,Description..."
-                />
-              </div>
-              <div className="p-6 bg-gray-50 flex gap-3">
-                <button
-                  onClick={() => setIsBulkImportOpen(false)}
-                  className="flex-1 py-3 px-4 bg-white border border-gray-200 text-gray-700 font-semibold rounded-xl hover:bg-gray-100 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleBulkImport}
-                  className="flex-1 py-3 px-4 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200"
-                >
-                  Import Data
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+
 
       {/* Notification */}
       <AnimatePresence>
