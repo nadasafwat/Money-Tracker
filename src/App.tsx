@@ -70,9 +70,11 @@ export default function App() {
     onConfirm: () => {},
   });
 
+  const [authMessage, setAuthMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
   // Filters
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().substring(0, 7));
-  const [typeFilter, setTypeFilter] = useState<'all' | TransactionType>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | TransactionType>('expense');
   const [categoryFilters, setCategoryFilters] = useState<string[]>([]);
 
   const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -113,29 +115,55 @@ export default function App() {
 
   const handleAuth = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username || !password) return showNotification("Please fill all fields", "error");
+    setAuthMessage(null);
+
+    if (!username.trim()) {
+      setAuthMessage({ text: 'Please enter your username.', type: 'error' });
+      return;
+    }
+    if (!password) {
+      setAuthMessage({ text: 'Please enter your password.', type: 'error' });
+      return;
+    }
 
     try {
       const users = JSON.parse(localStorage.getItem('users') || '{}');
 
       if (authMode === 'register') {
-        if (users[username]) return showNotification("Username already exists", "error");
-        users[username] = password;
-        localStorage.setItem('users', JSON.stringify(users));
-        showNotification("Registration successful! Please login.", "success");
-        setAuthMode('login');
-      } else {
-        if (users[username] === password) {
-          sessionStorage.setItem('currentUser', username);
-          setCurrentUser(username);
-          loadUserData(username);
-        } else {
-          showNotification("Invalid username or password", "error");
+        if (username.trim().length < 3) {
+          setAuthMessage({ text: 'Username must be at least 3 characters.', type: 'error' });
+          return;
         }
+        if (password.length < 4) {
+          setAuthMessage({ text: 'Password must be at least 4 characters.', type: 'error' });
+          return;
+        }
+        if (users[username.trim()]) {
+          setAuthMessage({ text: 'This username is already taken. Try another.', type: 'error' });
+          return;
+        }
+        users[username.trim()] = password;
+        localStorage.setItem('users', JSON.stringify(users));
+        setAuthMessage({ text: '✓ Account created! You can now sign in.', type: 'success' });
+        setAuthMode('login');
+        setPassword('');
+      } else {
+        if (!users[username.trim()]) {
+          setAuthMessage({ text: 'No account found with that username.', type: 'error' });
+          return;
+        }
+        if (users[username.trim()] !== password) {
+          setAuthMessage({ text: 'Incorrect password. Please try again.', type: 'error' });
+          return;
+        }
+        setAuthMessage(null);
+        sessionStorage.setItem('currentUser', username.trim());
+        setCurrentUser(username.trim());
+        loadUserData(username.trim());
       }
     } catch (error) {
       console.error("Auth error:", error);
-      showNotification("Authentication system error", "error");
+      setAuthMessage({ text: 'Something went wrong. Please try again.', type: 'error' });
     }
   };
 
@@ -253,6 +281,7 @@ export default function App() {
     );
   };
 
+  // Summary cards are NOT affected by type/category filters — always reflect the full selected month
   const summary = useMemo(() => {
     const baseIncome = parseFloat(settings.baseIncome.toString()) || 0;
     let income = baseIncome;
@@ -261,7 +290,8 @@ export default function App() {
     let cash = baseIncome;
     let card = 0;
 
-    filteredTransactions.forEach(t => {
+    const monthTxs = transactions.filter(t => t.date.startsWith(selectedMonth));
+    monthTxs.forEach(t => {
       const amt = t.amount;
       if (t.type === 'income') {
         income += amt;
@@ -273,7 +303,7 @@ export default function App() {
     });
 
     return { totalIncome: income, totalExpense: expense, balance: income - expense, cash, card };
-  }, [filteredTransactions, settings.baseIncome]);
+  }, [transactions, selectedMonth, settings.baseIncome]);
 
   // --- Charts Data ---
   const categoryData = useMemo(() => {
@@ -514,9 +544,20 @@ export default function App() {
             </button>
           </form>
 
+          {authMessage && (
+            <div className={`mt-4 px-4 py-3 rounded-lg text-sm font-medium flex items-center gap-2 ${
+              authMessage.type === 'success'
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                : 'bg-rose-50 text-rose-700 border border-rose-200'
+            }`}>
+              <span>{authMessage.type === 'success' ? '✓' : '✕'}</span>
+              {authMessage.text}
+            </div>
+          )}
+
           <div className="mt-6 text-center">
             <button 
-              onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+              onClick={() => { setAuthMode(authMode === 'login' ? 'register' : 'login'); setAuthMessage(null); }}
               className="text-indigo-600 font-medium hover:underline"
             >
               {authMode === 'login' ? "Don't have an account? Register" : "Already have an account? Login"}
@@ -723,7 +764,7 @@ export default function App() {
                 {/* Date groups */}
                 {Object.entries(groups).map(([date, txs]) => {
                   const dayTotal = txs.reduce(
-                    (sum, t) => sum + (t.type === 'expense' ? t.amount : -t.amount), 0
+                    (sum, t) => sum + (t.type === 'expense' ? t.amount : 0), 0
                   );
                   return (
                     <div key={date}>
