@@ -381,42 +381,15 @@ export default function App() {
 
   // ── Calculations ──────────────────────────
 
-  /**
-   * Cumulative net balance of ALL months strictly BEFORE selectedMonth.
-   * Exchange transactions don't affect total balance.
-   */
-  const carriedForward = useMemo(() => {
-    return transactions
-      .filter(t => t.date.substring(0, 7) < selectedMonth && t.type !== 'exchange')
-      .reduce((sum, t) => sum + (t.type === 'income' ? t.amount : -t.amount), 0);
-  }, [transactions, selectedMonth]);
-
-  /** Full month summary — uses carriedForward + baseIncome for this month */
+  /** Full month summary — uses baseIncome + this month's transactions */
   const summary = useMemo(() => {
     const baseIncome = parseFloat(settings.baseIncome.toString()) || 0;
-
-    // Historical sub-balances from all months before selected
-    let cashHistory = 0;
-    let cardHistory = 0;
-    transactions
-      .filter(t => t.date.substring(0, 7) < selectedMonth)
-      .forEach(t => {
-        const amt = t.amount;
-        if (t.type === 'income') {
-          if (t.paymentMethod === 'cash') cashHistory += amt; else cardHistory += amt;
-        } else if (t.type === 'expense') {
-          if (t.paymentMethod === 'cash') cashHistory -= amt; else cardHistory -= amt;
-        } else if (t.type === 'exchange') {
-          if (t.exchangeFrom === 'cash') { cashHistory -= amt; cardHistory += amt; }
-          else                           { cardHistory -= amt; cashHistory += amt; }
-        }
-      });
 
     // This month's transactions
     let income  = baseIncome;
     let expense = 0;
-    let cash    = cashHistory + baseIncome; // base income → cash by default
-    let card    = cardHistory;
+    let cash    = baseIncome; // base income → cash by default
+    let card    = 0;
 
     const monthTxs = transactions.filter(t => t.date.startsWith(selectedMonth));
     monthTxs.forEach(t => {
@@ -434,9 +407,9 @@ export default function App() {
       }
     });
 
-    const balance = carriedForward + income - expense;
+    const balance = income - expense;
     return { totalIncome: income, totalExpense: expense, balance, cash, card };
-  }, [transactions, selectedMonth, settings.baseIncome, carriedForward]);
+  }, [transactions, selectedMonth, settings.baseIncome]);
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
@@ -572,7 +545,7 @@ export default function App() {
   };
 
   const exportCSV = () => {
-    const toExport = filteredTransactions.length > 0 ? filteredTransactions : transactions;
+    const toExport = transactions;
     let csv = 'Date,Type,Category,Payment Method,Amount,Description\n';
     toExport.forEach(t => {
       csv += `${t.date},${t.type},"${t.category}",${t.paymentMethod},${t.amount},"${t.description.replace(/"/g, '""')}"\n`;
@@ -755,15 +728,6 @@ export default function App() {
               <p className="text-indigo-100 text-sm font-medium">Total Balance</p>
               <h2 className="text-3xl font-bold mt-1">EGP {summary.balance.toFixed(2)}</h2>
 
-              {/* Carried Forward badge */}
-              {carriedForward !== 0 && (
-                <div className="mt-2 inline-flex items-center gap-1.5 bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-semibold">
-                  <ArrowLeftRight className="w-3 h-3" />
-                  <span>
-                    Carried Forward: {carriedForward >= 0 ? '+' : ''}EGP {carriedForward.toFixed(2)}
-                  </span>
-                </div>
-              )}
 
               <div className="mt-4 flex justify-between text-sm text-indigo-100 border-t border-indigo-500 pt-3">
                 <div className="flex items-center gap-1">
