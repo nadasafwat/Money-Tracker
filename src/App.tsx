@@ -567,7 +567,19 @@ export default function App() {
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Transactions');
-    XLSX.writeFile(wb, `transactions_${currentUser}.xlsx`);
+
+    // Use type:'array' → Uint8Array to avoid SheetJS's binary-string Blob path,
+    // which corrupts non-ASCII characters in browser environments.
+    const uint8 = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as Uint8Array;
+    const blob  = new Blob([uint8], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url   = URL.createObjectURL(blob);
+    const link  = document.createElement('a');
+    link.href      = url;
+    link.download  = `transactions_${currentUser}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const importCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
