@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import * as XLSX from 'xlsx';
 import {
   Plus,
   Pencil,
@@ -553,25 +554,20 @@ export default function App() {
 
 
 
-  const exportCSV = () => {
-    const toExport = transactions;
-    let csv = 'Date,Type,Category,Payment Method,Amount,Description\n';
-    toExport.forEach(t => {
-      csv += `${t.date},${t.type},"${t.category}",${t.paymentMethod},${t.amount},"${t.description.replace(/"/g, '""')}"\n`;
-    });
+  const exportXLSX = () => {
+    const rows = transactions.map(t => ({
+      Date:             t.date,
+      Type:             t.type,
+      Category:         t.category,
+      'Payment Method': t.paymentMethod,
+      Amount:           t.amount,
+      Description:      t.description,
+    }));
 
-    const bom = '\uFEFF';
-    const csvWithBom = bom + csv;
-
-    const blob     = new Blob([csvWithBom], { type: 'text/csv;charset=utf-8;' });
-    const url      = URL.createObjectURL(blob);
-    const link     = document.createElement('a');
-    link.href      = url;
-    link.download  = `transactions_${currentUser}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Transactions');
+    XLSX.writeFile(wb, `transactions_${currentUser}.xlsx`);
   };
 
   const importCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1295,11 +1291,11 @@ export default function App() {
                         <input type="file" accept=".csv" onChange={importCSV} className="hidden" />
                       </label>
                       <button
-                        onClick={exportCSV}
+                        onClick={exportXLSX}
                         className="flex items-center gap-3 w-full px-4 py-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition"
                       >
                         <Download className="w-5 h-5 text-indigo-600" />
-                        <span className="text-sm font-medium text-gray-700">Export CSV</span>
+                        <span className="text-sm font-medium text-gray-700">Export Excel</span>
                       </button>
                       <button
                         onClick={() => {
