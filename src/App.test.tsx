@@ -93,4 +93,19 @@ describe('parseCSVText CSV Parser', () => {
     expect(result[0].category).toBe('Food');
     expect(result[0].amount).toBe(50);
   });
+
+  it('correctly parses UTF-8 comma-separated CSV with BOM and Arabic text', () => {
+    const csvContent = '\uFEFFDate,Type,Category,Payment Method,Amount,Description\n' +
+      '2026-06-29,expense,"طعام",cash,150,"وجبة غداء"\n' +
+      '2026-06-29,income,"الراتب",card,8000,"راتب إضافي"';
+    const result = parseCSVText(csvContent);
+    expect(result).toHaveLength(2);
+    expect(result[0].category).toBe('طعام');
+    expect(result[0].amount).toBe(150);
+    expect(result[0].description).toBe('وجبة غداء');
+    
+    expect(result[1].category).toBe('الراتب');
+    expect(result[1].amount).toBe(8000);
+    expect(result[1].description).toBe('راتب إضافي');
+  });
 });

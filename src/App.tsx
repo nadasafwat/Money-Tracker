@@ -555,22 +555,15 @@ export default function App() {
 
   const exportCSV = () => {
     const toExport = transactions;
-    let csv = 'Date\tType\tCategory\tPayment Method\tAmount\tDescription\n';
+    let csv = 'Date,Type,Category,Payment Method,Amount,Description\n';
     toExport.forEach(t => {
-      csv += `${t.date}\t${t.type}\t"${t.category}"\t${t.paymentMethod}\t${t.amount}\t"${t.description.replace(/"/g, '""')}"\n`;
+      csv += `${t.date},${t.type},"${t.category}",${t.paymentMethod},${t.amount},"${t.description.replace(/"/g, '""')}"\n`;
     });
 
     const bom = '\uFEFF';
     const csvWithBom = bom + csv;
-    
-    // Encode string to UTF-16LE bytes
-    const buffer = new ArrayBuffer(csvWithBom.length * 2);
-    const view = new DataView(buffer);
-    for (let i = 0; i < csvWithBom.length; i++) {
-      view.setUint16(i * 2, csvWithBom.charCodeAt(i), true); // true for little-endian
-    }
 
-    const blob     = new Blob([buffer], { type: 'text/csv;charset=utf-16le;' });
+    const blob     = new Blob([csvWithBom], { type: 'text/csv;charset=utf-8;' });
     const url      = URL.createObjectURL(blob);
     const link     = document.createElement('a');
     link.href      = url;
