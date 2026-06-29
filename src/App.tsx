@@ -57,9 +57,96 @@ const COLORS = [
 // ─────────────────────────────────────────────
 const uid = () => Math.random().toString(36).slice(2, 11);
 
+
+export const parseCSVText = (text: string): Transaction[] => {
+  if (text.startsWith('\uFEFF')) text = text.substring(1);
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length <= 1) return [];
+
+  let separator = ',';
+  if (lines[0].includes('\t')) {
+    separator = '\t';
+  } else if (lines[0].includes(';')) {
+    separator = ';';
+  }
+
+  const parseLine = (line: string): string[] => {
+    const regex = new RegExp(`${separator}(?=(?:(?:[^"]*"){2})*[^"]*$)`);
+    return line.split(regex).map(p => p.replace(/^"|"$/g, '').trim());
+  };
+
+  const headerParts = parseLine(lines[0]).map(h => h.toLowerCase().replace(/\s+/g, ''));
+  const col = (names: string[]): number => {
+    for (const name of names) {
+      const idx = headerParts.indexOf(name.toLowerCase().replace(/\s+/g, ''));
+      if (idx !== -1) return idx;
+    }
+    return -1;
+  };
+
+  const dateIdx = col(['date']);
+  const typeIdx = col(['type']);
+  const amtIdx  = col(['amount', 'amt']);
+  const catIdx  = col(['category', 'cat']);
+  const pmIdx   = col(['paymentmethod', 'payment method', 'payment', 'method']);
+  const descIdx = col(['description', 'desc', 'note', 'notes']);
+
+  if ([dateIdx, typeIdx, amtIdx, catIdx].some(i => i === -1)) return [];
+
+  const allCatNames = [...CATEGORIES.expense, ...CATEGORIES.income];
+  const findCategory = (cat: string) => {
+    const trimmed = cat.trim();
+    return allCatNames.find(c => c.trim().toLowerCase() === trimmed.toLowerCase()) || trimmed;
+  };
+
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return new Date().toISOString().substring(0, 10);
+    const parts = dateStr.split(/[-/.]/);
+    if (parts.length === 3) {
+      const [p1, p2, p3] = parts;
+      if (p1.length === 4) return `${p1}-${p2.padStart(2, '0')}-${p3.padStart(2, '0')}`;
+      return `${p3}-${p1.padStart(2, '0')}-${p2.padStart(2, '0')}`;
+    }
+    return dateStr;
+  };
+
+  const newTxs: Transaction[] = [];
+  for (const line of lines.slice(1)) {
+    const parts = parseLine(line);
+    if (parts.length < 4) continue;
+
+    const dateRaw     = parts[dateIdx] || '';
+    const typeRaw     = parts[typeIdx]  || '';
+    const categoryRaw = catIdx  !== -1 ? parts[catIdx]  || '' : '';
+    const paymentRaw  = pmIdx   !== -1 ? parts[pmIdx]   || '' : '';
+    const amountStr   = parts[amtIdx]  || '';
+    const descRaw     = descIdx !== -1 ? parts[descIdx] || '' : '';
+
+    const amount = parseFloat(amountStr.replace(/[^0-9.-]/g, ''));
+    if (isNaN(amount)) continue;
+
+    const type          = typeRaw.toLowerCase();
+    const paymentMethod = paymentRaw.toLowerCase();
+
+    newTxs.push({
+      id: uid(),
+      date: formatDate(dateRaw),
+      type: (['income', 'expense', 'exchange'] as TransactionType[]).includes(type as TransactionType)
+        ? (type as TransactionType)
+        : 'expense',
+      category: findCategory(categoryRaw),
+      paymentMethod: (paymentMethod === 'cash' || paymentMethod === 'card') ? paymentMethod : 'cash',
+      amount,
+      description: descRaw.replace(/""/g, '"'),
+    });
+  }
+  return newTxs;
+};
+
 // ─────────────────────────────────────────────
 // Main App
 // ─────────────────────────────────────────────
+
 export default function App() {
   // ── Auth ──────────────────────────────────
   const [currentUser, setCurrentUser] = useState<string | null>(null);
@@ -464,96 +551,26 @@ export default function App() {
     });
   }, [transactions, selectedMonth, settings.baseIncome]);
 
-  // ── CSV Logic ─────────────────────────────
-  const parseCSVText = (text: string): Transaction[] => {
-    if (text.startsWith('\uFEFF')) text = text.substring(1);
-    const lines = text.split(/\r?\n/).filter(l => l.trim());
-    if (lines.length <= 1) return [];
 
-    const separator = lines[0].includes(';') ? ';' : ',';
-    const parseLine = (line: string): string[] => {
-      const regex = new RegExp(`${separator}(?=(?:(?:[^"]*"){2})*[^"]*$)`);
-      return line.split(regex).map(p => p.replace(/^"|"$/g, '').trim());
-    };
-
-    const headerParts = parseLine(lines[0]).map(h => h.toLowerCase().replace(/\s+/g, ''));
-    const col = (names: string[]): number => {
-      for (const name of names) {
-        const idx = headerParts.indexOf(name.toLowerCase().replace(/\s+/g, ''));
-        if (idx !== -1) return idx;
-      }
-      return -1;
-    };
-
-    const dateIdx = col(['date']);
-    const typeIdx = col(['type']);
-    const amtIdx  = col(['amount', 'amt']);
-    const catIdx  = col(['category', 'cat']);
-    const pmIdx   = col(['paymentmethod', 'payment method', 'payment', 'method']);
-    const descIdx = col(['description', 'desc', 'note', 'notes']);
-
-    if ([dateIdx, typeIdx, amtIdx, catIdx].some(i => i === -1)) return [];
-
-    const allCatNames = [...CATEGORIES.expense, ...CATEGORIES.income];
-    const findCategory = (cat: string) => {
-      const trimmed = cat.trim();
-      return allCatNames.find(c => c.trim().toLowerCase() === trimmed.toLowerCase()) || trimmed;
-    };
-
-    const formatDate = (dateStr: string) => {
-      if (!dateStr) return new Date().toISOString().substring(0, 10);
-      const parts = dateStr.split(/[-/.]/);
-      if (parts.length === 3) {
-        const [p1, p2, p3] = parts;
-        if (p1.length === 4) return `${p1}-${p2.padStart(2, '0')}-${p3.padStart(2, '0')}`;
-        return `${p3}-${p1.padStart(2, '0')}-${p2.padStart(2, '0')}`;
-      }
-      return dateStr;
-    };
-
-    const newTxs: Transaction[] = [];
-    for (const line of lines.slice(1)) {
-      const parts = parseLine(line);
-      if (parts.length < 4) continue;
-
-      const dateRaw     = parts[dateIdx] || '';
-      const typeRaw     = parts[typeIdx]  || '';
-      const categoryRaw = catIdx  !== -1 ? parts[catIdx]  || '' : '';
-      const paymentRaw  = pmIdx   !== -1 ? parts[pmIdx]   || '' : '';
-      const amountStr   = parts[amtIdx]  || '';
-      const descRaw     = descIdx !== -1 ? parts[descIdx] || '' : '';
-
-      const amount = parseFloat(amountStr.replace(/[^0-9.-]/g, ''));
-      if (isNaN(amount)) continue;
-
-      const type          = typeRaw.toLowerCase();
-      const paymentMethod = paymentRaw.toLowerCase();
-
-      newTxs.push({
-        id: uid(),
-        date: formatDate(dateRaw),
-        type: (['income', 'expense', 'exchange'] as TransactionType[]).includes(type as TransactionType)
-          ? (type as TransactionType)
-          : 'expense',
-        category: findCategory(categoryRaw),
-        paymentMethod: (paymentMethod === 'cash' || paymentMethod === 'card') ? paymentMethod : 'cash',
-        amount,
-        description: descRaw.replace(/""/g, '"'),
-      });
-    }
-    return newTxs;
-  };
 
   const exportCSV = () => {
     const toExport = transactions;
-    let csv = 'Date,Type,Category,Payment Method,Amount,Description\n';
+    let csv = 'Date\tType\tCategory\tPayment Method\tAmount\tDescription\n';
     toExport.forEach(t => {
-      csv += `${t.date},${t.type},"${t.category}",${t.paymentMethod},${t.amount},"${t.description.replace(/"/g, '""')}"\n`;
+      csv += `${t.date}\t${t.type}\t"${t.category}"\t${t.paymentMethod}\t${t.amount}\t"${t.description.replace(/"/g, '""')}"\n`;
     });
-    const encoder  = new TextEncoder();
-    const utf8     = encoder.encode(csv);
-    const bom      = new Uint8Array([0xEF, 0xBB, 0xBF]);
-    const blob     = new Blob([bom, utf8], { type: 'text/csv;charset=UTF-8;' });
+
+    const bom = '\uFEFF';
+    const csvWithBom = bom + csv;
+    
+    // Encode string to UTF-16LE bytes
+    const buffer = new ArrayBuffer(csvWithBom.length * 2);
+    const view = new DataView(buffer);
+    for (let i = 0; i < csvWithBom.length; i++) {
+      view.setUint16(i * 2, csvWithBom.charCodeAt(i), true); // true for little-endian
+    }
+
+    const blob     = new Blob([buffer], { type: 'text/csv;charset=utf-16le;' });
     const url      = URL.createObjectURL(blob);
     const link     = document.createElement('a');
     link.href      = url;
@@ -570,7 +587,17 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
-        const text   = event.target?.result as string;
+        const buffer = event.target?.result as ArrayBuffer;
+        const arr = new Uint8Array(buffer);
+        let encoding = 'utf-8';
+        if (arr.length >= 2 && arr[0] === 0xFF && arr[1] === 0xFE) {
+          encoding = 'utf-16le';
+        } else if (arr.length >= 2 && arr[0] === 0xFE && arr[1] === 0xFF) {
+          encoding = 'utf-16be';
+        }
+
+        const decoder = new TextDecoder(encoding);
+        const text = decoder.decode(buffer);
         const newTxs = parseCSVText(text);
         if (newTxs.length === 0) { showNotification('No valid transactions found. Check your CSV format.', 'error'); return; }
         saveTransactions([...transactions, ...newTxs]);
@@ -582,7 +609,7 @@ export default function App() {
       e.target.value = '';
     };
     reader.onerror = () => showNotification('Error reading file.', 'error');
-    reader.readAsText(file, 'UTF-8');
+    reader.readAsArrayBuffer(file);
   };
 
   // ── Dynamic categories for form ───────────
