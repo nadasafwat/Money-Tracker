@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, beforeEach } from 'vitest';
-import App, { parseCSVText } from './App';
+import * as XLSX from 'xlsx';
+import App, { parseCSVText, parseImportFile } from './App';
 
 describe('Money Tracker App', () => {
   beforeEach(() => {
@@ -107,5 +108,26 @@ describe('parseCSVText CSV Parser', () => {
     expect(result[1].category).toBe('الراتب');
     expect(result[1].amount).toBe(8000);
     expect(result[1].description).toBe('راتب إضافي');
+  });
+
+  it('correctly parses transactions from an .xlsx workbook', () => {
+    const workbook = XLSX.utils.book_new();
+    const sheet = XLSX.utils.aoa_to_sheet([
+      ['Date', 'Type', 'Category', 'Payment Method', 'Amount', 'Description'],
+      ['2026-06-29', 'expense', 'Food', 'cash', '120.50', 'Lunch'],
+      ['2026-06-30', 'income', 'Salary', 'card', '5000', 'Salary'],
+    ]);
+    XLSX.utils.book_append_sheet(workbook, sheet, 'Transactions');
+
+    const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;
+    const result = parseImportFile('transactions.xlsx', buffer);
+
+    expect(result).toHaveLength(2);
+    expect(result[0].category).toBe('Food');
+    expect(result[0].amount).toBe(120.50);
+    expect(result[0].description).toBe('Lunch');
+    expect(result[1].category).toBe('Salary');
+    expect(result[1].amount).toBe(5000);
+    expect(result[1].description).toBe('Salary');
   });
 });

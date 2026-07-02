@@ -144,6 +144,42 @@ export const parseCSVText = (text: string): Transaction[] => {
   return newTxs;
 };
 
+export const parseImportFile = (fileName: string, data: ArrayBuffer | Uint8Array): Transaction[] => {
+  const name = fileName.toLowerCase();
+  if (name.endsWith('.xlsx')) {
+    const workbook = XLSX.read(data, { type: 'array' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '' });
+
+    return rows.map((row) => {
+      const date = String(row.Date ?? row.date ?? '').trim();
+      const type = String(row.Type ?? row.type ?? '').trim().toLowerCase();
+      const category = String(row.Category ?? row.category ?? '').trim();
+      const paymentMethod = String(row['Payment Method'] ?? row.paymentMethod ?? '').trim().toLowerCase();
+      const amount = Number(row.Amount ?? row.amount ?? 0);
+      const description = String(row.Description ?? row.description ?? '').trim();
+
+      return {
+        id: uid(),
+        date: date || new Date().toISOString().substring(0, 10),
+        type: (['income', 'expense', 'exchange'] as TransactionType[]).includes(type as TransactionType)
+          ? (type as TransactionType)
+          : 'expense',
+        category: category || 'Uncategorized',
+        paymentMethod: (paymentMethod === 'cash' || paymentMethod === 'card') ? paymentMethod : 'cash',
+        amount: Number.isFinite(amount) ? amount : 0,
+        description,
+      };
+    });
+  }
+
+  const text = typeof data === 'string'
+    ? data
+    : new TextDecoder('utf-8').decode(data as Uint8Array);
+  return parseCSVText(text);
+};
+
 // ─────────────────────────────────────────────
 // Main App
 // ─────────────────────────────────────────────
@@ -590,22 +626,33 @@ export default function App() {
       try {
         const buffer = event.target?.result as ArrayBuffer;
         const arr = new Uint8Array(buffer);
-        let encoding = 'utf-8';
-        if (arr.length >= 2 && arr[0] === 0xFF && arr[1] === 0xFE) {
-          encoding = 'utf-16le';
-        } else if (arr.length >= 2 && arr[0] === 0xFE && arr[1] === 0xFF) {
-          encoding = 'utf-16be';
+        const isExcel = file.name.toLowerCase().endsWith('.xlsx');
+
+        let newTxs: Transaction[] = [];
+        if (isExcel) {
+          newTxs = parseImportFile(file.name, buffer);
+        } else {
+          let encoding = 'utf-8';
+          if (arr.length >= 2 && arr[0] === 0xFF && arr[1] === 0xFE) {
+            encoding = 'utf-16le';
+          } else if (arr.length >= 2 && arr[0] === 0xFE && arr[1] === 0xFF) {
+            encoding = 'utf-16be';
+          }
+
+          const decoder = new TextDecoder(encoding);
+          const text = decoder.decode(buffer);
+          newTxs = parseCSVText(text);
         }
 
-        const decoder = new TextDecoder(encoding);
-        const text = decoder.decode(buffer);
-        const newTxs = parseCSVText(text);
-        if (newTxs.length === 0) { showNotification('No valid transactions found. Check your CSV format.', 'error'); return; }
+        if (newTxs.length === 0) {
+          showNotification(`No valid transactions found. Check your ${isExcel ? 'Excel' : 'CSV'} format.`, 'error');
+          return;
+        }
         saveTransactions([...transactions, ...newTxs]);
         showNotification(`Successfully imported ${newTxs.length} transactions.`, 'success');
       } catch (err) {
-        console.error('CSV import error:', err);
-        showNotification('Failed to import CSV. Please check the file format.', 'error');
+        console.error('Import error:', err);
+        showNotification('Failed to import file. Please check the file format.', 'error');
       }
       e.target.value = '';
     };
@@ -1299,8 +1346,8 @@ export default function App() {
                     <div className="space-y-3">
                       <label className="flex items-center gap-3 w-full px-4 py-3 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition">
                         <Upload className="w-5 h-5 text-indigo-600" />
-                        <span className="text-sm font-medium text-gray-700">Import CSV</span>
-                        <input type="file" accept=".csv" onChange={importCSV} className="hidden" />
+                        <span className="text-sm font-medium text-gray-700">Import CSV / Excel</span>
+                        <input type="file" accept=".csv,.xlsx" onChange={importCSV} className="hidden" />
                       </label>
                       <button
                         onClick={exportXLSX}
